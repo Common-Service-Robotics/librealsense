@@ -4,6 +4,7 @@
 #include "processing-blocks-factory.h"
 
 #include "sse/sse-align.h"
+#include "neon/neon-align.h"
 #include "cuda/cuda-align.h"
 
 #include "stream.h"
@@ -21,11 +22,18 @@ namespace librealsense
     {
         return std::make_shared<librealsense::align_sse>(align_to);
     }
+#else
+#ifdef __ARM_NEON
+    std::shared_ptr<librealsense::align> create_align(rs2_stream align_to)
+    {
+        return std::make_shared<librealsense::align_neon>(align_to);
+    }
 #else // No optimizations
     std::shared_ptr<librealsense::align> create_align(rs2_stream align_to)
     {
         return std::make_shared<librealsense::align>(align_to);
     }
+#endif //__ARM_NEON
 #endif // __SSSE3__
 #endif // RS2_USE_CUDA
 
