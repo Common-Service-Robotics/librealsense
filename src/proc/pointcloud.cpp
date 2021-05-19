@@ -20,6 +20,9 @@
 #ifdef __SSSE3__
 #include "proc/sse/sse-pointcloud.h"
 #endif
+#ifdef __ARM_NEON
+#include "proc/neon/neon-pointcloud.h"
+#endif
 
 namespace librealsense
 {
@@ -397,7 +400,11 @@ namespace librealsense
         #ifdef __SSSE3__
             return std::make_shared<librealsense::pointcloud_sse>();
         #else
+        #ifdef __ARM_NEON
+            return std::make_shared<librealsense::pointcloud_neon>();
+        #else
             return std::make_shared<librealsense::pointcloud>();
+        #endif
         #endif
         #endif
     }

@@ -1,5 +1,8 @@
 // License: Apache 2.0. See LICENSE file in root directory.
 // Copyright(c) 2019 Intel Corporation. All Rights Reserved.
+//
+// https://github.com/DLTcollab/sse2neon/blob/master/sse2neon.h
+// https://developer.arm.com/architectures/instruction-sets/simd-isas/neon/intrinsics
 //#ifdef __ARM_NEON
 
 #include "neon-align.h"
@@ -13,16 +16,10 @@
 #include "stream.h"
 
 /* Rounding mode macros. */
-#define _MM_FROUND_TO_NEAREST_INT 0x00
-#define _MM_FROUND_TO_NEG_INF 0x01
-#define _MM_FROUND_TO_POS_INF 0x02
-#define _MM_FROUND_TO_ZERO 0x03
-#define _MM_FROUND_CUR_DIRECTION 0x04
-#define _MM_FROUND_NO_EXC 0x08
-#define _MM_ROUND_NEAREST 0x0000
-#define _MM_ROUND_DOWN 0x2000
-#define _MM_ROUND_UP 0x4000
-#define _MM_ROUND_TOWARD_ZERO 0x6000
+#define _ROUND_NEAREST 0x0000
+#define _ROUND_DOWN 0x2000
+#define _ROUND_UP 0x4000
+#define _ROUND_TOWARD_ZERO 0x6000
 
 #include <arm_neon.h>
 
@@ -93,7 +90,8 @@ inline void distorte_x_y<RS2_DISTORTION_MODIFIED_BROWN_CONRADY>(const float32x4_
 
 uint32_t GET_ROUNDING_MODE()
 {
-    return _MM_FROUND_TO_NEAREST_INT;
+    //round nearest might be better
+    return _ROUND_TOWARD_ZERO;
 }
 
 float32x4_t divide(float32x4_t a, float32x4_t b)
@@ -153,20 +151,20 @@ int32x4_t convertWithRound(float32x4_t a)
 #if defined(__aarch64__)
     switch (GET_ROUNDING_MODE())
     {
-    case _MM_ROUND_NEAREST:
+    case _ROUND_NEAREST:
         return vcvtnq_s32_f32(a);
-    case _MM_ROUND_DOWN:
+    case _ROUND_DOWN:
         return vcvtmq_s32_f32(a);
-    case _MM_ROUND_UP:
+    case _ROUND_UP:
         return vcvtpq_s32_f32(a);
-    default:  // _MM_ROUND_TOWARD_ZERO
+    default:  // _ROUND_TOWARD_ZERO
         return vcvtq_s32_f32(a);
     }
 #else
     float* f = (float*)&a;
     switch (GET_ROUNDING_MODE())
     {
-    case _MM_ROUND_NEAREST:
+    case _ROUND_NEAREST:
     {
         uint32x4_t signmask = vdupq_n_u32(0x80000000);
         float32x4_t half = vbslq_f32(signmask, a, vdupq_n_f32(0.5f)); /* +/- 0.5 */
@@ -180,11 +178,11 @@ int32x4_t convertWithRound(float32x4_t a)
         uint32x4_t is_delta_half = vceqq_f32(delta, half); /* delta == +/- 0.5 */
         return vbslq_s32(is_delta_half, r_even, r_normal);
     }
-    case _MM_ROUND_DOWN:
+    case _ROUND_DOWN:
         return int32x4_t{ (int32_t)floorf(f[3]), (int32_t)floorf(f[2]), (int32_t)floorf(f[1]), (int32_t)floorf(f[0]) };
-    case _MM_ROUND_UP:
+    case _ROUND_UP:
         return int32x4_t{ (int32_t)ceilf(f[3]), (int32_t)ceilf(f[2]), (int32_t)ceilf(f[1]), (int32_t)ceilf(f[0]) };
-    default:  // _MM_ROUND_TOWARD_ZERO
+    default:  // _ROUND_TOWARD_ZERO
         return int32x4_t{ (int32_t)f[3], (int32_t)f[2], (int32_t)f[1], (int32_t)f[0] };
     }
 #endif
@@ -201,9 +199,9 @@ inline void get_texture_map_neon(const uint16_t* depth,
     const rs2_extrinsics& from_to_other)
 {
     //mask for shuffle
-    int8_t data1[16] = { (int8_t)0xff, (int8_t)0xff, (int8_t)7, (int8_t)6, (int8_t)0xff, (int8_t)0xff, (int8_t)5, (int8_t)4,
+    const int8_t data1[16] = { (int8_t)0xff, (int8_t)0xff, (int8_t)7, (int8_t)6, (int8_t)0xff, (int8_t)0xff, (int8_t)5, (int8_t)4,
         (int8_t)0xff, (int8_t)0xff, (int8_t)3, (int8_t)2, (int8_t)0xff, (int8_t)0xff, (int8_t)1, (int8_t)0 };
-    int8_t data2[16] = { (int8_t)0xff, (int8_t)0xff, (int8_t)15, (int8_t)14, (int8_t)0xff, (int8_t)0xff, (int8_t)13, (int8_t)12,
+    const int8_t data2[16] = { (int8_t)0xff, (int8_t)0xff, (int8_t)15, (int8_t)14, (int8_t)0xff, (int8_t)0xff, (int8_t)13, (int8_t)12,
         (int8_t)0xff, (int8_t)0xff, (int8_t)11, (int8_t)10, (int8_t)0xff, (int8_t)0xff, (int8_t)9, (int8_t)8 };
     const int32x4_t mask0 = vreinterpretq_s32_s8(vld1q_s8(data1));
     const int32x4_t mask1 = vreinterpretq_s32_s8(vld1q_s8(data2));
@@ -282,7 +280,7 @@ inline void get_texture_map_neon(const uint16_t* depth,
         distorte_x_y<dist>(p_x1, p_y1, &p_x1, &p_y1, to);
 
         //zero the x and y if z is zero
-        auto cmp = vreinterpretq_s32_u32(vmvnq_u32(vceqq_f32(depth0, zero))); //might need to specift int32x4_t instead of auto
+        auto cmp = vreinterpretq_s32_u32(vmvnq_u32(vceqq_f32(depth0, zero)));
         p_x0 = vreinterpretq_f32_s32(vandq_s32(vreinterpretq_s32_f32(vaddq_f32(vmulq_f32(p_x0, fx), ppx)), cmp)); //not sure if vreinterpretq_s32_f32 is better than vcvtq_f32_s32
         p_y0 = vreinterpretq_f32_s32(vandq_s32(vreinterpretq_s32_f32(vaddq_f32(vmulq_f32(p_y0, fy), ppy)), cmp));
 
@@ -297,18 +295,17 @@ inline void get_texture_map_neon(const uint16_t* depth,
         auto uuvv1_0 = vcombine_f32(vget_low_f32(u_round0), vget_low_f32(v_round0)); //1, 0, 1, 0
         auto uuvv2_0 = vcombine_f32(vget_high_f32(u_round0), vget_high_f32(v_round0)); //3, 2, 3, 2
 
-        //auto res1_0 = _mm_shuffle_ps(uuvv1_0, uuvv1_0, _MM_SHUFFLE(3, 1, 2, 0)); //3, 1, 2, 0
-        //auto res2_0 = _mm_shuffle_ps(uuvv2_0, uuvv2_0, _MM_SHUFFLE(3, 1, 2, 0));
-        auto res1_0 = float32x4_t{ vgetq_lane_f32(uuvv1_0, 3), vgetq_lane_f32(uuvv1_0, 1), vgetq_lane_f32(uuvv1_0, 2), vgetq_lane_f32(uuvv1_0, 0) };//3, 1, 2, 0
-        auto res2_0 = float32x4_t{ vgetq_lane_f32(uuvv2_0, 3), vgetq_lane_f32(uuvv2_0, 1), vgetq_lane_f32(uuvv2_0, 2), vgetq_lane_f32(uuvv2_0, 0) };
+        //maybe this would be better as a table or some swaps
+        auto res1_0 = float32x4_t{ vgetq_lane_f32(uuvv1_0, 3), vgetq_lane_f32(uuvv1_0, 1), vgetq_lane_f32(uuvv1_0, 2), vgetq_lane_f32(uuvv1_0, 0) }; //3, 1, 2, 0
+        auto res2_0 = float32x4_t{ vgetq_lane_f32(uuvv2_0, 3), vgetq_lane_f32(uuvv2_0, 1), vgetq_lane_f32(uuvv2_0, 2), vgetq_lane_f32(uuvv2_0, 0) }; //3, 1, 2, 0
 
         auto res1_int0 = convertWithRound(res1_0);
         auto res2_int0 = convertWithRound(res2_0);
 
 
 #if __has_builtin(__builtin_nontemporal_store)
-        __builtin_nontemporal_store(res1_int0, res[0]);
-        __builtin_nontemporal_store(res2_int0, res[1]);
+        __builtin_nontemporal_store(res1_int0, &res[0]);
+        __builtin_nontemporal_store(res2_int0, &res[1]);
 #else
         vst1q_s32((int32_t*)&res[0], res1_int0);
         vst1q_s32((int32_t*)&res[1], res2_int0);
@@ -322,15 +319,15 @@ inline void get_texture_map_neon(const uint16_t* depth,
         auto uuvv1_1 = vcombine_f32(vget_low_f32(u_round1), vget_low_f32(v_round1)); //1, 0, 1, 0
         auto uuvv2_1 = vcombine_f32(vget_high_f32(u_round1), vget_high_f32(v_round1)); //3, 2, 3, 2
 
-        auto res1 = float32x4_t{ vgetq_lane_f32(uuvv1_0, 3), vgetq_lane_f32(uuvv1_0, 1), vgetq_lane_f32(uuvv1_0, 2), vgetq_lane_f32(uuvv1_0, 0) };//3, 1, 2, 0
-        auto res2 = float32x4_t{ vgetq_lane_f32(uuvv2_0, 3), vgetq_lane_f32(uuvv2_0, 1), vgetq_lane_f32(uuvv2_0, 2), vgetq_lane_f32(uuvv2_0, 0) };
+        auto res1 = float32x4_t{ vgetq_lane_f32(uuvv1_0, 3), vgetq_lane_f32(uuvv1_0, 1), vgetq_lane_f32(uuvv1_0, 2), vgetq_lane_f32(uuvv1_0, 0) }; //3, 1, 2, 0
+        auto res2 = float32x4_t{ vgetq_lane_f32(uuvv2_0, 3), vgetq_lane_f32(uuvv2_0, 1), vgetq_lane_f32(uuvv2_0, 2), vgetq_lane_f32(uuvv2_0, 0) }; //3, 1, 2, 0
 
         auto res1_int1 = convertWithRound(res1);
         auto res2_int1 = convertWithRound(res2);
 
 #if __has_builtin(__builtin_nontemporal_store)
-        __builtin_nontemporal_store(res1_int1, res[0]);
-        __builtin_nontemporal_store(res2_int1, res[1]);
+        __builtin_nontemporal_store(res1_int1, &res[0]);
+        __builtin_nontemporal_store(res2_int1, &res[1]);
 #else
         vst1q_s32((int32_t*)&res[0], res1_int1);
         vst1q_s32((int32_t*)&res[1], res2_int1);
