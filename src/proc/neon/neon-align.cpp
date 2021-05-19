@@ -3,7 +3,7 @@
 //
 // https://github.com/DLTcollab/sse2neon/blob/master/sse2neon.h
 // https://developer.arm.com/architectures/instruction-sets/simd-isas/neon/intrinsics
-//#ifdef __ARM_NEON
+#ifdef __ARM_NEON
 
 #include "neon-align.h"
 #include "../include/librealsense2/hpp/rs_sensor.hpp"
