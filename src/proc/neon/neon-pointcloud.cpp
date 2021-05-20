@@ -189,22 +189,33 @@ namespace librealsense
             auto p1x = vmulq_f32(depth1, x1);
             auto p1y = vmulq_f32(depth1, y1);
 
-            //scattering of the x y z
-            auto x_y0 = _mm_shuffle_ps(p0x, p0y, _MM_SHUFFLE(2, 0, 2, 0));
-            auto z_x0 = _mm_shuffle_ps(depth0, p0x, _MM_SHUFFLE(3, 1, 2, 0));
-            auto y_z0 = _mm_shuffle_ps(p0y, depth0, _MM_SHUFFLE(3, 1, 3, 1));
+            //scattering of the x y z. If x_y0 etc are just setting up for xyz, why not just make it directly?
+            //_mm_shuffle_ps(a, b, _MM_SHUFFLE(1, 0, 3, 2)) = b_1, b_0, a_3, a_2
 
-            auto xyz01 = _mm_shuffle_ps(x_y0, z_x0, _MM_SHUFFLE(2, 0, 2, 0));
-            auto xyz02 = _mm_shuffle_ps(y_z0, x_y0, _MM_SHUFFLE(3, 1, 2, 0));
-            auto xyz03 = _mm_shuffle_ps(z_x0, y_z0, _MM_SHUFFLE(3, 1, 3, 1));
+            //auto x_y0 = _mm_shuffle_ps(p0x, p0y, _MM_SHUFFLE(2, 0, 2, 0));      //x_y0 = p0y_2, p0y_0, p0x_2, p0x_0 
+            //auto z_x0 = _mm_shuffle_ps(depth0, p0x, _MM_SHUFFLE(3, 1, 2, 0));   //z_x0 = p0x_3, p0x_1, dep_2, dep_0
+            //auto y_z0 = _mm_shuffle_ps(p0y, depth0, _MM_SHUFFLE(3, 1, 3, 1));   //y_z0 = dep_3, dep_1, p0y_3, p0y_1
 
-            auto x_y1 = _mm_shuffle_ps(p1x, p1y, _MM_SHUFFLE(2, 0, 2, 0));
-            auto z_x1 = _mm_shuffle_ps(depth1, p1x, _MM_SHUFFLE(3, 1, 2, 0));
-            auto y_z1 = _mm_shuffle_ps(p1y, depth1, _MM_SHUFFLE(3, 1, 3, 1));
+            //auto xyz01 = _mm_shuffle_ps(x_y0, z_x0, _MM_SHUFFLE(2, 0, 2, 0));   //xyz1 = p0x_1, dep_0, p0y_0, p0x_0
+            //auto xyz02 = _mm_shuffle_ps(y_z0, x_y0, _MM_SHUFFLE(3, 1, 2, 0));   //xyz2 = p0y_2, p0x_2, dep_1, p0y_1
+            //auto xyz03 = _mm_shuffle_ps(z_x0, y_z0, _MM_SHUFFLE(3, 1, 3, 1));   //xyz3 = dep_3, p0y_3, p0x_3, dep_2
 
-            auto xyz11 = _mm_shuffle_ps(x_y1, z_x1, _MM_SHUFFLE(2, 0, 2, 0));
-            auto xyz12 = _mm_shuffle_ps(y_z1, x_y1, _MM_SHUFFLE(3, 1, 2, 0));
-            auto xyz13 = _mm_shuffle_ps(z_x1, y_z1, _MM_SHUFFLE(3, 1, 3, 1));
+            //no idea which approach is faster, or if we should be doing set_lane instead to make the float32x4
+            auto xyz01 = float32x4_t{ vgetq_lane_f32(p0x, 1), vgetq_lane_f32(depth0, 0), vgetq_lane_f32(p0y, 0), vgetq_lane_f32(p0x, 0) };
+            auto xyz02 = float32x4_t{ vgetq_lane_f32(p0y, 2), vgetq_lane_f32(p0x, 2), vgetq_lane_f32(depth0, 1), vgetq_lane_f32(p0y, 1) };
+            auto xyz03 = float32x4_t{ vgetq_lane_f32(depth0, 3), vgetq_lane_f32(p0y, 3), vgetq_lane_f32(p0x, 3), vgetq_lane_f32(depth0, 2) };
+
+            //auto x_y1 = _mm_shuffle_ps(p1x, p1y, _MM_SHUFFLE(2, 0, 2, 0));
+            //auto z_x1 = _mm_shuffle_ps(depth1, p1x, _MM_SHUFFLE(3, 1, 2, 0));
+            //auto y_z1 = _mm_shuffle_ps(p1y, depth1, _MM_SHUFFLE(3, 1, 3, 1));
+
+            //auto xyz11 = _mm_shuffle_ps(x_y1, z_x1, _MM_SHUFFLE(2, 0, 2, 0));
+            //auto xyz12 = _mm_shuffle_ps(y_z1, x_y1, _MM_SHUFFLE(3, 1, 2, 0));
+            //auto xyz13 = _mm_shuffle_ps(z_x1, y_z1, _MM_SHUFFLE(3, 1, 3, 1));
+
+            auto xyz11 = float32x4_t{ vgetq_lane_f32(p1x, 1), vgetq_lane_f32(depth1, 0), vgetq_lane_f32(p1y, 0), vgetq_lane_f32(p1x, 0) };
+            auto xyz12 = float32x4_t{ vgetq_lane_f32(p1y, 2), vgetq_lane_f32(p1x, 2), vgetq_lane_f32(depth1, 1), vgetq_lane_f32(p1y, 1) };
+            auto xyz13 = float32x4_t{ vgetq_lane_f32(depth1, 3), vgetq_lane_f32(p1y, 3), vgetq_lane_f32(p1x, 3), vgetq_lane_f32(depth1, 2) };
 
 
             //store 8 points of x y z

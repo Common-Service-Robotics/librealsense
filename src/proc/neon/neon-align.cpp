@@ -164,7 +164,7 @@ int32x4_t convertWithRound(float32x4_t a)
     float* f = (float*)&a;
     switch (GET_ROUNDING_MODE())
     {
-    case _ROUND_NEAREST:
+    case _ROUND_NEAREST: //for some reason rotates by 90 degrees?!?!
     {
         uint32x4_t signmask = vdupq_n_u32(0x80000000);
         float32x4_t half = vbslq_f32(signmask, a, vdupq_n_f32(0.5f)); /* +/- 0.5 */
@@ -172,16 +172,15 @@ int32x4_t convertWithRound(float32x4_t a)
         int32x4_t r_trunc = vcvtq_s32_f32(a); /* truncate to integer: [a] */
         int32x4_t plusone = vreinterpretq_s32_u32(vshrq_n_u32(
             vreinterpretq_u32_s32(vnegq_s32(r_trunc)), 31)); /* 1 or 0 */
-        int32x4_t r_even = vbicq_s32(vaddq_s32(r_trunc, plusone),
-            vdupq_n_s32(1)); /* ([a] + {0,1}) & ~1 */
+        int32x4_t r_even = vbicq_s32(vaddq_s32(r_trunc, plusone), vdupq_n_s32(1)); /* ([a] + {0,1}) & ~1 */
         float32x4_t delta = vsubq_f32(a, vcvtq_f32_s32(r_trunc)); /* compute delta: delta = (a - [a]) */
         uint32x4_t is_delta_half = vceqq_f32(delta, half); /* delta == +/- 0.5 */
         return vbslq_s32(is_delta_half, r_even, r_normal);
     }
     case _ROUND_DOWN:
-        return int32x4_t{ (int32_t)floorf(f[3]), (int32_t)floorf(f[2]), (int32_t)floorf(f[1]), (int32_t)floorf(f[0]) };
+        return vcvtq_s32_f32(float32x4_t{ floorf(f[3]), floorf(f[2]), floorf(f[1]), floorf(f[0]) });
     case _ROUND_UP:
-        return int32x4_t{ (int32_t)ceilf(f[3]), (int32_t)ceilf(f[2]), (int32_t)ceilf(f[1]), (int32_t)ceilf(f[0]) };
+        return vcvtq_s32_f32(float32x4_t{ ceilf(f[3]), ceilf(f[2]), ceilf(f[1]), ceilf(f[0]) });
     default:  // _ROUND_TOWARD_ZERO
         return int32x4_t{ (int32_t)f[3], (int32_t)f[2], (int32_t)f[1], (int32_t)f[0] };
     }
@@ -319,8 +318,8 @@ inline void get_texture_map_neon(const uint16_t* depth,
         auto uuvv1_1 = vcombine_f32(vget_low_f32(u_round1), vget_low_f32(v_round1)); //1, 0, 1, 0
         auto uuvv2_1 = vcombine_f32(vget_high_f32(u_round1), vget_high_f32(v_round1)); //3, 2, 3, 2
 
-        auto res1 = float32x4_t{ vgetq_lane_f32(uuvv1_0, 3), vgetq_lane_f32(uuvv1_0, 1), vgetq_lane_f32(uuvv1_0, 2), vgetq_lane_f32(uuvv1_0, 0) }; //3, 1, 2, 0
-        auto res2 = float32x4_t{ vgetq_lane_f32(uuvv2_0, 3), vgetq_lane_f32(uuvv2_0, 1), vgetq_lane_f32(uuvv2_0, 2), vgetq_lane_f32(uuvv2_0, 0) }; //3, 1, 2, 0
+        auto res1 = float32x4_t{ vgetq_lane_f32(uuvv1_1, 3), vgetq_lane_f32(uuvv1_1, 1), vgetq_lane_f32(uuvv1_1, 2), vgetq_lane_f32(uuvv1_1, 0) }; //3, 1, 2, 0
+        auto res2 = float32x4_t{ vgetq_lane_f32(uuvv2_1, 3), vgetq_lane_f32(uuvv2_1, 1), vgetq_lane_f32(uuvv2_1, 2), vgetq_lane_f32(uuvv2_1, 0) }; //3, 1, 2, 0
 
         auto res1_int1 = convertWithRound(res1);
         auto res2_int1 = convertWithRound(res2);
