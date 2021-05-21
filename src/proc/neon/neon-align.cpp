@@ -3,7 +3,7 @@
 //
 // https://github.com/DLTcollab/sse2neon/blob/master/sse2neon.h
 // https://developer.arm.com/architectures/instruction-sets/simd-isas/neon/intrinsics
-#ifdef __ARM_NEON
+//#ifdef __ARM_NEON
 
 #include "neon-align.h"
 #include "../include/librealsense2/hpp/rs_sensor.hpp"
@@ -109,10 +109,10 @@ float32x4_t divide(float32x4_t a, float32x4_t b)
 #endif
 }
 
-int32x4_t shuffleMask(int32x4_t a, int32x4_t b)
+int64x2_t shuffleMask(int64x2_t a, int64x2_t b)
 {
-    int8x16_t tbl = vreinterpretq_s8_s32(a);   // input a
-    uint8x16_t idx = vreinterpretq_u8_s32(b);  // input b
+    int8x16_t tbl = vreinterpretq_s8_s64(a);   // input a
+    uint8x16_t idx = vreinterpretq_u8_s64(b);  // input b
     uint8x16_t idx_masked = vandq_u8(idx, vdupq_n_u8(0x8F));  // avoid using meaningless bits
 #if defined(__aarch64__)
     return vreinterpretq_s32_s8(vqtbl1q_s8(tbl, idx_masked));
@@ -125,11 +125,11 @@ int32x4_t shuffleMask(int32x4_t a, int32x4_t b)
         "vtbl.8  %f[ret], {%e[tbl], %f[tbl]}, %f[idx]\n"
         : [ret] "=&w"(ret)
         : [tbl] "w"(tbl), [idx] "w"(idx_masked));
-    return vreinterpretq_s32_s8(ret);
+    return vreinterpretq_s64_s8(ret);
 #else
     // use this line if testing on aarch64
     int8x8x2_t a_split = { vget_low_s8(tbl), vget_high_s8(tbl) };
-    return vreinterpretq_s32_s8(
+    return vreinterpretq_s64_s8(
         vcombine_s8(vtbl2_s8(a_split, vget_low_u8(idx_masked)),
             vtbl2_s8(a_split, vget_high_u8(idx_masked))));
 #endif
@@ -198,12 +198,18 @@ inline void get_texture_map_neon(const uint16_t* depth,
     const rs2_extrinsics& from_to_other)
 {
     //mask for shuffle
-    const int8_t data1[16] = { (int8_t)0xff, (int8_t)0xff, (int8_t)7, (int8_t)6, (int8_t)0xff, (int8_t)0xff, (int8_t)5, (int8_t)4,
-        (int8_t)0xff, (int8_t)0xff, (int8_t)3, (int8_t)2, (int8_t)0xff, (int8_t)0xff, (int8_t)1, (int8_t)0 };
-    const int8_t data2[16] = { (int8_t)0xff, (int8_t)0xff, (int8_t)15, (int8_t)14, (int8_t)0xff, (int8_t)0xff, (int8_t)13, (int8_t)12,
-        (int8_t)0xff, (int8_t)0xff, (int8_t)11, (int8_t)10, (int8_t)0xff, (int8_t)0xff, (int8_t)9, (int8_t)8 };
-    const int32x4_t mask0 = vreinterpretq_s32_s8(vld1q_s8(data1));
-    const int32x4_t mask1 = vreinterpretq_s32_s8(vld1q_s8(data2));
+    const int8_t __attribute__((aligned(16))) data1[16] = { (int8_t)0, (int8_t)1, (int8_t)0xff, (int8_t)0xff,
+                                                            (int8_t)2, (int8_t)3, (int8_t)0xff, (int8_t)0xff,
+                                                            (int8_t)4, (int8_t)5, (int8_t)0xff, (int8_t)0xff,
+                                                            (int8_t)6, (int8_t)7, (int8_t)0xff, (int8_t)0xff };
+
+    const int8_t __attribute__((aligned(16))) data2[16] = { (int8_t)8, (int8_t)9, (int8_t)0xff, (int8_t)0xff,
+                                                            (int8_t)10, (int8_t)11, (int8_t)0xff, (int8_t)0xff,
+                                                            (int8_t)12, (int8_t)13, (int8_t)0xff, (int8_t)0xff,
+                                                            (int8_t)14, (int8_t)15, (int8_t)0xff, (int8_t)0xff };
+
+    const int64x2_t mask0 = vreinterpretq_s64_s8(vld1q_s8(data1));
+    const int64x2_t mask1 = vreinterpretq_s64_s8(vld1q_s8(data2));
 
     auto scale = vdupq_n_f32(depth_scale);
 
@@ -242,15 +248,14 @@ inline void get_texture_map_neon(const uint16_t* depth,
         auto y0 = vld1q_f32(mapy + i);
         auto y1 = vld1q_f32(mapy + i + 4);
 
+        int64x2_t d = vreinterpretq_s64_s32(vld1q_s32((int32_t const*)(depth + i)));        //d7 d7 d6 d6 d5 d5 d4 d4 d3 d3 d2 d2 d1 d1 d0 d0
 
-        int32x4_t d = vld1q_s32((int32_t const*)(depth + i));        //d7 d7 d6 d6 d5 d5 d4 d4 d3 d3 d2 d2 d1 d1 d0 d0
+                                         //split the depth pixel to 2 registers of 4 floats each
+        int64x2_t d0 = shuffleMask(d, mask0);        // 00 00 d3 d3 00 00 d2 d2 00 00 d1 d1 00 00 d0 d0
+        int64x2_t d1 = shuffleMask(d, mask1);        // 00 00 d7 d7 00 00 d6 d6 00 00 d5 d5 00 00 d4 d4
 
-                                                     //split the depth pixel to 2 registers of 4 floats each
-        int32x4_t d0 = shuffleMask(d, mask0);        // 00 00 d3 d3 00 00 d2 d2 00 00 d1 d1 00 00 d0 d0
-        int32x4_t d1 = shuffleMask(d, mask1);        // 00 00 d7 d7 00 00 d6 d6 00 00 d5 d5 00 00 d4 d4
-
-        float32x4_t depth0 = vcvtq_f32_s32(d0); //convert int depth to float
-        float32x4_t depth1 = vcvtq_f32_s32(d1); //convert int depth to float
+        float32x4_t depth0 = vcvtq_f32_s32(vreinterpretq_s32_s64(d0)); //convert int depth to float
+        float32x4_t depth1 = vcvtq_f32_s32(vreinterpretq_s32_s64(d1)); //convert int depth to float
 
         depth0 = vmulq_f32(depth0, scale);
         depth1 = vmulq_f32(depth1, scale);

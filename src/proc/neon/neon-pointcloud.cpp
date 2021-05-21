@@ -16,7 +16,7 @@
 
 #include <iostream>
 
-//#define __ARM_NEON 1
+#define __ARM_NEON 1
 #ifdef __ARM_NEON
 
 #include <arm_neon.h>
@@ -106,10 +106,10 @@ namespace librealsense
 #endif
     }
 
-    int32x4_t shuffleMask(int32x4_t a, int32x4_t b)
+    int64x2_t shuffleMask(int64x2_t a, int64x2_t b)
     {
-        int8x16_t tbl = vreinterpretq_s8_s32(a);   // input a
-        uint8x16_t idx = vreinterpretq_u8_s32(b);  // input b
+        int8x16_t tbl = vreinterpretq_s8_s64(a);   // input a
+        uint8x16_t idx = vreinterpretq_u8_s64(b);  // input b
         uint8x16_t idx_masked = vandq_u8(idx, vdupq_n_u8(0x8F));  // avoid using meaningless bits
 #if defined(__aarch64__)
         return vreinterpretq_s32_s8(vqtbl1q_s8(tbl, idx_masked));
@@ -122,11 +122,11 @@ namespace librealsense
             "vtbl.8  %f[ret], {%e[tbl], %f[tbl]}, %f[idx]\n"
             : [ret] "=&w"(ret)
             : [tbl] "w"(tbl), [idx] "w"(idx_masked));
-        return vreinterpretq_s32_s8(ret);
+        return vreinterpretq_s64_s8(ret);
 #else
     // use this line if testing on aarch64
         int8x8x2_t a_split = { vget_low_s8(tbl), vget_high_s8(tbl) };
-        return vreinterpretq_s32_s8(
+        return vreinterpretq_s64_s8(
             vcombine_s8(vtbl2_s8(a_split, vget_low_u8(idx_masked)),
                 vtbl2_s8(a_split, vget_high_u8(idx_masked))));
 #endif
@@ -150,12 +150,18 @@ namespace librealsense
         auto point = (float*)output.get_vertices();
 
         //mask for shuffle
-        const int8_t data1[16] = { (int8_t)0xff, (int8_t)0xff, (int8_t)7, (int8_t)6, (int8_t)0xff, (int8_t)0xff, (int8_t)5, (int8_t)4,
-            (int8_t)0xff, (int8_t)0xff, (int8_t)3, (int8_t)2, (int8_t)0xff, (int8_t)0xff, (int8_t)1, (int8_t)0 };
-        const int8_t data2[16] = { (int8_t)0xff, (int8_t)0xff, (int8_t)15, (int8_t)14, (int8_t)0xff, (int8_t)0xff, (int8_t)13, (int8_t)12,
-            (int8_t)0xff, (int8_t)0xff, (int8_t)11, (int8_t)10, (int8_t)0xff, (int8_t)0xff, (int8_t)9, (int8_t)8 };
-        const int32x4_t mask0 = vreinterpretq_s32_s8(vld1q_s8(data1));
-        const int32x4_t mask1 = vreinterpretq_s32_s8(vld1q_s8(data2));
+        const int8_t __attribute__((aligned(16))) data1[16] = { (int8_t)0, (int8_t)1, (int8_t)0xff, (int8_t)0xff,
+                                                                (int8_t)2, (int8_t)3, (int8_t)0xff, (int8_t)0xff,
+                                                                (int8_t)4, (int8_t)5, (int8_t)0xff, (int8_t)0xff,
+                                                                (int8_t)6, (int8_t)7, (int8_t)0xff, (int8_t)0xff };
+
+        const int8_t __attribute__((aligned(16))) data2[16] = { (int8_t)8, (int8_t)9, (int8_t)0xff, (int8_t)0xff,
+                                                                (int8_t)10, (int8_t)11, (int8_t)0xff, (int8_t)0xff,
+                                                                (int8_t)12, (int8_t)13, (int8_t)0xff, (int8_t)0xff,
+                                                                (int8_t)14, (int8_t)15, (int8_t)0xff, (int8_t)0xff };
+
+        const int64x2_t mask0 = vreinterpretq_s64_s8(vld1q_s8(data1));
+        const int64x2_t mask1 = vreinterpretq_s64_s8(vld1q_s8(data2));
 
         auto scale = vdupq_n_f32(depth_scale);
 
@@ -170,15 +176,15 @@ namespace librealsense
             auto y0 = vld1q_f32(mapy + i);
             auto y1 = vld1q_f32(mapy + i + 4);
 
-            
-            int32x4_t d = vld1q_s32((int32_t const*)(depth_image + i));        //d7 d7 d6 d6 d5 d5 d4 d4 d3 d3 d2 d2 d1 d1 d0 d0
+
+            int64x2_t d = vreinterpretq_s64_s32(vld1q_s32((int32_t const*)(depth_image + i)));        //d7 d7 d6 d6 d5 d5 d4 d4 d3 d3 d2 d2 d1 d1 d0 d0
 
                                                      //split the depth pixel to 2 registers of 4 floats each
-            int32x4_t d0 = shuffleMask(d, mask0);        // 00 00 d3 d3 00 00 d2 d2 00 00 d1 d1 00 00 d0 d0
-            int32x4_t d1 = shuffleMask(d, mask1);        // 00 00 d7 d7 00 00 d6 d6 00 00 d5 d5 00 00 d4 d4
+            int64x2_t d0 = shuffleMask(d, mask0);        // 00 00 d3 d3 00 00 d2 d2 00 00 d1 d1 00 00 d0 d0
+            int64x2_t d1 = shuffleMask(d, mask1);        // 00 00 d7 d7 00 00 d6 d6 00 00 d5 d5 00 00 d4 d4
 
-            float32x4_t depth0 = vcvtq_f32_s32(d0); //convert int depth to float
-            float32x4_t depth1 = vcvtq_f32_s32(d1); //convert int depth to float
+            float32x4_t depth0 = vcvtq_f32_s32(vreinterpretq_s32_s64(d0)); //convert int depth to float
+            float32x4_t depth1 = vcvtq_f32_s32(vreinterpretq_s32_s64(d1)); //convert int depth to float
 
             depth0 = vmulq_f32(depth0, scale);
             depth1 = vmulq_f32(depth1, scale);
@@ -192,30 +198,30 @@ namespace librealsense
             //scattering of the x y z. If x_y0 etc are just setting up for xyz, why not just make it directly?
             //_mm_shuffle_ps(a, b, _MM_SHUFFLE(1, 0, 3, 2)) = b_1, b_0, a_3, a_2
 
-            //auto x_y0 = _mm_shuffle_ps(p0x, p0y, _MM_SHUFFLE(2, 0, 2, 0));      //x_y0 = p0y_2, p0y_0, p0x_2, p0x_0 
-            //auto z_x0 = _mm_shuffle_ps(depth0, p0x, _MM_SHUFFLE(3, 1, 2, 0));   //z_x0 = p0x_3, p0x_1, dep_2, dep_0
-            //auto y_z0 = _mm_shuffle_ps(p0y, depth0, _MM_SHUFFLE(3, 1, 3, 1));   //y_z0 = dep_3, dep_1, p0y_3, p0y_1
+            auto x_y0 = _mm_shuffle_ps(p0x, p0y, _MM_SHUFFLE(2, 0, 2, 0));      //x_y0 = p0y_2, p0y_0, p0x_2, p0x_0 
+            auto z_x0 = _mm_shuffle_ps(depth0, p0x, _MM_SHUFFLE(3, 1, 2, 0));   //z_x0 = p0x_3, p0x_1, dep_2, dep_0
+            auto y_z0 = _mm_shuffle_ps(p0y, depth0, _MM_SHUFFLE(3, 1, 3, 1));   //y_z0 = dep_3, dep_1, p0y_3, p0y_1
 
-            //auto xyz01 = _mm_shuffle_ps(x_y0, z_x0, _MM_SHUFFLE(2, 0, 2, 0));   //xyz1 = p0x_1, dep_0, p0y_0, p0x_0
-            //auto xyz02 = _mm_shuffle_ps(y_z0, x_y0, _MM_SHUFFLE(3, 1, 2, 0));   //xyz2 = p0y_2, p0x_2, dep_1, p0y_1
-            //auto xyz03 = _mm_shuffle_ps(z_x0, y_z0, _MM_SHUFFLE(3, 1, 3, 1));   //xyz3 = dep_3, p0y_3, p0x_3, dep_2
+            auto xyz01 = _mm_shuffle_ps(x_y0, z_x0, _MM_SHUFFLE(2, 0, 2, 0));   //xyz1 = p0x_1, dep_0, p0y_0, p0x_0
+            auto xyz02 = _mm_shuffle_ps(y_z0, x_y0, _MM_SHUFFLE(3, 1, 2, 0));   //xyz2 = p0y_2, p0x_2, dep_1, p0y_1
+            auto xyz03 = _mm_shuffle_ps(z_x0, y_z0, _MM_SHUFFLE(3, 1, 3, 1));   //xyz3 = dep_3, p0y_3, p0x_3, dep_2
 
             //no idea which approach is faster, or if we should be doing set_lane instead to make the float32x4
-            auto xyz01 = float32x4_t{ vgetq_lane_f32(p0x, 1), vgetq_lane_f32(depth0, 0), vgetq_lane_f32(p0y, 0), vgetq_lane_f32(p0x, 0) };
-            auto xyz02 = float32x4_t{ vgetq_lane_f32(p0y, 2), vgetq_lane_f32(p0x, 2), vgetq_lane_f32(depth0, 1), vgetq_lane_f32(p0y, 1) };
-            auto xyz03 = float32x4_t{ vgetq_lane_f32(depth0, 3), vgetq_lane_f32(p0y, 3), vgetq_lane_f32(p0x, 3), vgetq_lane_f32(depth0, 2) };
+            //auto xyz01 = float32x4_t{ vgetq_lane_f32(p0x, 1), vgetq_lane_f32(depth0, 0), vgetq_lane_f32(p0y, 0), vgetq_lane_f32(p0x, 0) };
+            //auto xyz02 = float32x4_t{ vgetq_lane_f32(p0y, 2), vgetq_lane_f32(p0x, 2), vgetq_lane_f32(depth0, 1), vgetq_lane_f32(p0y, 1) };
+            //auto xyz03 = float32x4_t{ vgetq_lane_f32(depth0, 3), vgetq_lane_f32(p0y, 3), vgetq_lane_f32(p0x, 3), vgetq_lane_f32(depth0, 2) };
 
-            //auto x_y1 = _mm_shuffle_ps(p1x, p1y, _MM_SHUFFLE(2, 0, 2, 0));
-            //auto z_x1 = _mm_shuffle_ps(depth1, p1x, _MM_SHUFFLE(3, 1, 2, 0));
-            //auto y_z1 = _mm_shuffle_ps(p1y, depth1, _MM_SHUFFLE(3, 1, 3, 1));
+            auto x_y1 = _mm_shuffle_ps(p1x, p1y, _MM_SHUFFLE(2, 0, 2, 0));
+            auto z_x1 = _mm_shuffle_ps(depth1, p1x, _MM_SHUFFLE(3, 1, 2, 0));
+            auto y_z1 = _mm_shuffle_ps(p1y, depth1, _MM_SHUFFLE(3, 1, 3, 1));
 
-            //auto xyz11 = _mm_shuffle_ps(x_y1, z_x1, _MM_SHUFFLE(2, 0, 2, 0));
-            //auto xyz12 = _mm_shuffle_ps(y_z1, x_y1, _MM_SHUFFLE(3, 1, 2, 0));
-            //auto xyz13 = _mm_shuffle_ps(z_x1, y_z1, _MM_SHUFFLE(3, 1, 3, 1));
+            auto xyz11 = _mm_shuffle_ps(x_y1, z_x1, _MM_SHUFFLE(2, 0, 2, 0));
+            auto xyz12 = _mm_shuffle_ps(y_z1, x_y1, _MM_SHUFFLE(3, 1, 2, 0));
+            auto xyz13 = _mm_shuffle_ps(z_x1, y_z1, _MM_SHUFFLE(3, 1, 3, 1));
 
-            auto xyz11 = float32x4_t{ vgetq_lane_f32(p1x, 1), vgetq_lane_f32(depth1, 0), vgetq_lane_f32(p1y, 0), vgetq_lane_f32(p1x, 0) };
-            auto xyz12 = float32x4_t{ vgetq_lane_f32(p1y, 2), vgetq_lane_f32(p1x, 2), vgetq_lane_f32(depth1, 1), vgetq_lane_f32(p1y, 1) };
-            auto xyz13 = float32x4_t{ vgetq_lane_f32(depth1, 3), vgetq_lane_f32(p1y, 3), vgetq_lane_f32(p1x, 3), vgetq_lane_f32(depth1, 2) };
+            //auto xyz11 = float32x4_t{ vgetq_lane_f32(p1x, 1), vgetq_lane_f32(depth1, 0), vgetq_lane_f32(p1y, 0), vgetq_lane_f32(p1x, 0) };
+            //auto xyz12 = float32x4_t{ vgetq_lane_f32(p1y, 2), vgetq_lane_f32(p1x, 2), vgetq_lane_f32(depth1, 1), vgetq_lane_f32(p1y, 1) };
+            //auto xyz13 = float32x4_t{ vgetq_lane_f32(depth1, 3), vgetq_lane_f32(p1y, 3), vgetq_lane_f32(p1x, 3), vgetq_lane_f32(depth1, 2) };
 
 
             //store 8 points of x y z
@@ -330,7 +336,7 @@ namespace librealsense
 
             //zero the x and y if z is zero
             cmp = vreinterpretq_s32_u32(vmvnq_u32(vceqq_f32(z, zero)));
-            p_x = vreinterpretq_f32_s32(vandq_s32(vreinterpretq_s32_f32(vaddq_f32(vmulq_f32(p_x, fx), ppx)), cmp)); //not sure if vreinterpretq_s32_f32 is better than vcvtq_f32_s32
+            p_x = vreinterpretq_f32_s32(vandq_s32(vreinterpretq_s32_f32(vaddq_f32(vmulq_f32(p_x, fx), ppx)), cmp)); //vreinterpretq_s32_f32 is cast, vcvtq_s32_f32 is convert w/ round
             p_y = vreinterpretq_f32_s32(vandq_s32(vreinterpretq_s32_f32(vaddq_f32(vmulq_f32(p_y, fy), ppy)), cmp));
 
             //scattering of the x y before normalize and store in pixels_ptr
