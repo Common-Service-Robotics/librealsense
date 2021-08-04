@@ -15,21 +15,20 @@ namespace librealsense
 
         pointcloud();
 
-        virtual const float3 * depth_to_points(
+        virtual const float3* depth_to_points(
             rs2::points output,
-            const rs2_intrinsics &depth_intrinsics, 
-            const rs2::depth_frame& depth_frame,
-            float depth_scale);
+            const rs2_intrinsics& depth_intrinsics,
+            const rs2::depth_frame& depth_frame);
         virtual void get_texture_map(
             rs2::points output,
             const float3* points,
             const unsigned int width,
             const unsigned int height,
-            const rs2_intrinsics &other_intrinsics,
+            const rs2_intrinsics& other_intrinsics,
             const rs2_extrinsics& extr,
             float2* pixels_ptr);
         virtual rs2::points allocate_points(const rs2::frame_source& source, const rs2::frame& f);
-        virtual void preprocess() {}
+        virtual void preprocess();
         virtual bool run__occlusion_filter(const rs2_extrinsics& extr);
 
     protected:
@@ -58,5 +57,8 @@ namespace librealsense
 
         stream_filter _prev_stream_filter;
         std::shared_ptr< pointcloud > _registered_auto_calib_cb;
+
+        std::vector<float> _pre_compute_map_x;
+        std::vector<float> _pre_compute_map_y;
     };
 }

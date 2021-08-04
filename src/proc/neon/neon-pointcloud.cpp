@@ -58,37 +58,6 @@ namespace librealsense
 {
     pointcloud_neon::pointcloud_neon() : pointcloud("Pointcloud (NEON)") {}
 
-    void pointcloud_neon::preprocess()
-    {
-        _pre_compute_map_x.resize(_depth_intrinsics->width * _depth_intrinsics->height);
-        _pre_compute_map_y.resize(_depth_intrinsics->width * _depth_intrinsics->height);
-
-        for (int h = 0; h < _depth_intrinsics->height; ++h)
-        {
-            for (int w = 0; w < _depth_intrinsics->width; ++w)
-            {
-                const float pixel[] = { (float)w, (float)h };
-
-                float x = (pixel[0] - _depth_intrinsics->ppx) / _depth_intrinsics->fx;
-                float y = (pixel[1] - _depth_intrinsics->ppy) / _depth_intrinsics->fy;
-
-
-                if (_depth_intrinsics->model == RS2_DISTORTION_INVERSE_BROWN_CONRADY)
-                {
-                    float r2 = x * x + y * y;
-                    float f = 1 + _depth_intrinsics->coeffs[0] * r2 + _depth_intrinsics->coeffs[1] * r2 * r2 + _depth_intrinsics->coeffs[4] * r2 * r2 * r2;
-                    float ux = x * f + 2 * _depth_intrinsics->coeffs[2] * x * y + _depth_intrinsics->coeffs[3] * (r2 + 2 * x * x);
-                    float uy = y * f + 2 * _depth_intrinsics->coeffs[3] * x * y + _depth_intrinsics->coeffs[2] * (r2 + 2 * y * y);
-                    x = ux;
-                    y = uy;
-                }
-
-                _pre_compute_map_x[h * _depth_intrinsics->width + w] = x;
-                _pre_compute_map_y[h * _depth_intrinsics->width + w] = y;
-            }
-        }
-    }
-
 #ifdef __ARM_NEON
     
     float32x4_t divide(float32x4_t a, float32x4_t b)
